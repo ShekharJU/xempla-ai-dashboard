@@ -18,7 +18,7 @@ st.set_page_config(page_title="Universal AI Analytics Dashboard", layout="wide")
 st.title("🔄 Closed-Loop AI System")
 
 # --- Data Loading ---
-DATA_FOLDER = r"C:\Users\Shekhar Bhardwaj\OneDrive\Desktop\Projects\xempla_ai_intern_prototype\sample_data"
+  DATA_FOLDER = os.path.join(os.path.dirname(__file__), "xempla_ai_intern_prototype", "sample_data")"
 st.write("Looking for CSVs in:", DATA_FOLDER)
 try:
     csv_files = [f for f in os.listdir(DATA_FOLDER) if f.endswith(".csv")]
