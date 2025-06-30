@@ -1,0 +1,139 @@
+# Kubernetes Deployment for Xempla AI Systems Intern Prototype
+# Production-ready configuration with scaling and monitoring
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: xempla-dashboard
+  namespace: xempla-ai
+  labels:
+    app: xempla-dashboard
+    version: v1.0.0
+    environment: production
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: xempla-dashboard
+  template:
+    metadata:
+      labels:
+        app: xempla-dashboard
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8501"
+        prometheus.io/path: "/_stcore/health"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+      - name: xempla-dashboard
+        image: xempla/xempla-dashboard:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8501
+          name: http
+          protocol: TCP
+        env:
+        - name: GEMINI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: xempla-secrets
+              key: gemini-api-key
+        - name: GEMINI_API_URL
+          valueFrom:
+            configMapKeyRef:
+              name: xempla-config
+              key: gemini-api-url
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: STREAMLIT_SERVER_PORT
+          value: "8501"
+        - name: STREAMLIT_SERVER_ADDRESS
+          value: "0.0.0.0"
+        - name: STREAMLIT_SERVER_HEADLESS
+          value: "true"
+        - name: STREAMLIT_SERVER_ENABLE_CORS
+          value: "false"
+        - name: STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION
+          value: "true"
+        - name: STREAMLIT_SERVER_ENABLE_STATIC_SERVING
+          value: "true"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /_stcore/health
+            port: 8501
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /_stcore/health
+            port: 8501
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: data-volume
+          mountPath: /app/data
+        - name: logs-volume
+          mountPath: /app/logs
+        - name: feedback-volume
+          mountPath: /app/feedback
+        - name: sample-data-volume
+          mountPath: /app/sample_data
+          readOnly: true
+      volumes:
+      - name: data-volume
+        persistentVolumeClaim:
+          claimName: xempla-data-pvc
+      - name: logs-volume
+        persistentVolumeClaim:
+          claimName: xempla-logs-pvc
+      - name: feedback-volume
+        persistentVolumeClaim:
+          claimName: xempla-feedback-pvc
+      - name: sample-data-volume
+        configMap:
+          name: xempla-sample-data
+      imagePullSecrets:
+      - name: xempla-registry-secret
+      nodeSelector:
+        node-type: application
+      tolerations:
+      - key: "node-role"
+        operator: "Equal"
+        value: "application"
+        effect: "NoSchedule"
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - xempla-dashboard
+              topologyKey: kubernetes.io/hostname 

@@ -1,0 +1,145 @@
+# Prometheus configuration for Xempla AI Systems Intern Prototype
+# Monitors dashboard performance, LLM API usage, and system health
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: xempla-ai-cluster
+    environment: production
+
+# Alerting rules
+rule_files:
+  - "alerting-rules.yml"
+
+# Alert manager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Xempla Dashboard
+  - job_name: 'xempla-dashboard'
+    metrics_path: '/_stcore/health'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    static_configs:
+      - targets: ['xempla-dashboard:8501']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        regex: '([^:]+)(?::\d+)?'
+        replacement: '${1}'
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'streamlit_(.+)'
+        target_label: streamlit_metric
+        replacement: '${1}'
+
+  # Node Exporter (system metrics)
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    scrape_interval: 30s
+
+  # Docker metrics
+  - job_name: 'docker'
+    static_configs:
+      - targets: ['docker-exporter:9323']
+    scrape_interval: 30s
+
+  # Kubernetes metrics
+  - job_name: 'kubernetes-pods'
+    kubernetes_sd_configs:
+      - role: pod
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: true
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+        target_label: __address__
+      - action: labelmap
+        regex: __meta_kubernetes_pod_label_(.+)
+      - source_labels: [__meta_kubernetes_namespace]
+        action: replace
+        target_label: kubernetes_namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: replace
+        target_label: kubernetes_pod_name
+
+  # Service discovery for Xempla services
+  - job_name: 'xempla-services'
+    kubernetes_sd_configs:
+      - role: service
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_service_label_app]
+        regex: xempla-.*
+        action: keep
+      - source_labels: [__meta_kubernetes_service_name]
+        action: replace
+        target_label: service_name
+      - source_labels: [__meta_kubernetes_namespace]
+        action: replace
+        target_label: namespace
+
+# Recording rules for common queries
+recording_rules:
+  - record: xempla:dashboard_response_time_seconds:rate5m
+    expr: rate(streamlit_request_duration_seconds[5m])
+  
+  - record: xempla:dashboard_requests_total:rate5m
+    expr: rate(streamlit_requests_total[5m])
+  
+  - record: xempla:dashboard_error_rate:rate5m
+    expr: rate(streamlit_errors_total[5m])
+  
+  - record: xempla:llm_api_calls_total:rate5m
+    expr: rate(llm_api_calls_total[5m])
+  
+  - record: xempla:llm_api_latency_seconds:p95
+    expr: histogram_quantile(0.95, rate(llm_api_duration_seconds_bucket[5m]))
+  
+  - record: xempla:feedback_submissions_total:rate5m
+    expr: rate(feedback_submissions_total[5m])
+  
+  - record: xempla:system_memory_usage_percent
+    expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100
+  
+  - record: xempla:system_cpu_usage_percent
+    expr: 100 - (avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)
+
+# Storage configuration
+storage:
+  tsdb:
+    path: /prometheus
+    retention.time: 30d
+    retention.size: 10GB
+
+# Remote write configuration (optional)
+remote_write:
+  - url: "http://remote-storage:9201/write"
+    remote_timeout: 30s
+    write_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'xempla:.*'
+        action: keep
+
+# Remote read configuration (optional)
+remote_read:
+  - url: "http://remote-storage:9201/read"
+    read_timeout: 30s 

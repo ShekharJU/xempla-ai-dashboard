@@ -1,0 +1,138 @@
+# Docker Compose configuration for Xempla AI Systems Intern Prototype
+# Supports local development and testing
+
+version: '3.8'
+
+services:
+  # Main dashboard application
+  xempla-dashboard:
+    build:
+      context: ../..
+      dockerfile: deployment/docker/Dockerfile
+    container_name: xempla-dashboard
+    ports:
+      - "8501:8501"
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_API_URL=${GEMINI_API_URL}
+      - ENVIRONMENT=development
+      - LOG_LEVEL=DEBUG
+    volumes:
+      - ../../data:/app/data
+      - ../../logs:/app/logs
+      - ../../feedback:/app/feedback
+      - ../../sample_data:/app/sample_data
+    networks:
+      - xempla-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Development database (optional)
+  postgres:
+    image: postgres:15-alpine
+    container_name: xempla-postgres
+    environment:
+      - POSTGRES_DB=xempla_db
+      - POSTGRES_USER=xempla_user
+      - POSTGRES_PASSWORD=xempla_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - xempla-network
+    restart: unless-stopped
+    profiles:
+      - database
+
+  # Redis for caching (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: xempla-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - xempla-network
+    restart: unless-stopped
+    profiles:
+      - cache
+
+  # Monitoring stack (optional)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: xempla-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ../../deployment/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - xempla-network
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: xempla-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ../../deployment/monitoring/grafana-dashboard.json:/etc/grafana/provisioning/dashboards/dashboard.json
+    networks:
+      - xempla-network
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # Nginx reverse proxy (optional)
+  nginx:
+    image: nginx:alpine
+    container_name: xempla-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ../../deployment/docker/nginx.conf:/etc/nginx/nginx.conf
+      - ../../deployment/docker/ssl:/etc/nginx/ssl
+    depends_on:
+      - xempla-dashboard
+    networks:
+      - xempla-network
+    restart: unless-stopped
+    profiles:
+      - production
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+networks:
+  xempla-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16 
