@@ -55,6 +55,7 @@ streamlit run xempla_final_dashboard.py
 - Push your code to GitHub
 - Ensure `requirements.txt` and `README.md` are in the root
 - Deploy via https://streamlit.io/cloud using your repo and set the main file to `xempla_final_dashboard.py`
+-[view the dashboard](https://xempla-ai-dashboard-aqv4see6dlejqjmapyrmjp.streamlit.app/)
 
 ## Contributing
 Pull requests are welcome! For major changes, please open an issue first to discuss what you would like to change.
